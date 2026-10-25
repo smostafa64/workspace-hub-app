@@ -12,14 +12,14 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
     List<Reservation> findAllByOrderByStartsAtDesc();
 
     @Query("""
-           select case when count(r) > 0 then true else false end
-           from Reservation r
-           where r.resource.id = :resourceId
-           and r.status in (com.example.workspace.domain.ReservationStatus.PENDING,
-                            com.example.workspace.domain.ReservationStatus.CONFIRMED)
-           and r.startsAt <= :endAt and r.endsAt >= :startAt
-           """)
+            select case when count(r) > 0 then true else false end
+            from Reservation r
+            where r.resource.id = :resourceId
+            and r.status in (com.example.workspace.domain.ReservationStatus.PENDING,
+                             com.example.workspace.domain.ReservationStatus.CONFIRMED)
+            and r.startsAt < :endAt and r.endsAt > :startAt
+            """)
     boolean existsConflictingReservation(@Param("resourceId") Long resourceId,
-                                         @Param("startAt") Instant startAt,
-                                         @Param("endAt") Instant endAt);
+                                          @Param("startAt") Instant startAt,
+                                          @Param("endAt") Instant endAt);
 }
