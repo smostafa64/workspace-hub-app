@@ -8,8 +8,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.*;
+import java.time.zone.ZoneOffsetTransition;
+import java.time.zone.ZoneRules;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -44,8 +45,8 @@ public class ReservationService {
     public ReservationSeriesView createSeries(ReservationSeriesInput input, String actor) {
         validateSeriesInput(input);
         ZoneId zone = ZoneId.of(input.timezone().trim());
-        validateOffsetMatchesZone(input.startsAt(), zone, "startsAt");
-        validateOffsetMatchesZone(input.endsAt(), zone, "endsAt");
+        validateDateTimeMatchesZonePolicy(input.startsAt(), zone, "startsAt");
+        validateDateTimeMatchesZonePolicy(input.endsAt(), zone, "endsAt");
 
         BookableResource resource = resources.findLockedById(input.resourceId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Resource not found"));
@@ -151,11 +152,13 @@ public class ReservationService {
         }
     }
 
-    private void validateOffsetMatchesZone(OffsetDateTime value, ZoneId zone, String fieldName) {
+    private void validateDateTimeMatchesZonePolicy(OffsetDateTime value, ZoneId zone, String fieldName) {
         if (value == null) return;
-        ZoneOffset actual = value.toInstant().atZone(zone).getOffset();
-        if (!actual.equals(value.getOffset())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, fieldName + " offset is inconsistent with timezone " + zone.getId());
+        ZonedDateTime resolved = resolveLocalDateTime(value.toLocalDateTime(), zone);
+        if (!resolved.toInstant().equals(value.toInstant())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    fieldName + " offset is inconsistent with timezone " + zone.getId()
+                            + " and its DST resolution policy");
         }
     }
 
@@ -174,14 +177,16 @@ public class ReservationService {
     }
 
     private List<OccurrencePlan> expandSeries(ReservationSeriesInput input, ZoneId zone) {
-        Duration duration = Duration.between(input.startsAt().toInstant(), input.endsAt().toInstant());
-        ZonedDateTime firstStart = input.startsAt().toInstant().atZone(zone);
+        LocalDateTime firstLocalStart = input.startsAt().toLocalDateTime();
+        LocalDateTime firstLocalEnd = input.endsAt().toLocalDateTime();
         List<OccurrencePlan> occurrences = new ArrayList<>();
         for (int i = 0; i < input.occurrences(); i++) {
-            LocalDateTime localStart = firstStart.toLocalDateTime().plusWeeks(i);
+            LocalDateTime localStart = firstLocalStart.plusWeeks(i);
+            LocalDateTime localEnd = firstLocalEnd.plusWeeks(i);
             ZonedDateTime start = resolveLocalDateTime(localStart, zone);
-            ZonedDateTime end = start.plus(duration);
-            occurrences.add(new OccurrencePlan(i, start.toInstant(), end.toInstant(), start.toOffsetDateTime(), end.toOffsetDateTime()));
+            ZonedDateTime end = resolveLocalDateTime(localEnd, zone);
+            occurrences.add(new OccurrencePlan(i + 1, start.toInstant(), end.toInstant(),
+                    start.toOffsetDateTime(), end.toOffsetDateTime()));
         }
         return occurrences;
     }
@@ -193,17 +198,21 @@ public class ReservationService {
             return ZonedDateTime.ofLocal(localDateTime, zone, validOffsets.get(0));
         }
         if (validOffsets.size() > 1) {
-            ZoneOffset preferred = validOffsets.stream()
-                    .min(Comparator.comparingInt(ZoneOffset::getTotalSeconds))
-                    .orElse(validOffsets.get(0));
+            ZoneOffset preferred = validOffsets.get(0);
+            for (ZoneOffset candidate : validOffsets) {
+                if (localDateTime.toInstant(candidate).isBefore(localDateTime.toInstant(preferred))) {
+                    preferred = candidate;
+                }
+            }
             return ZonedDateTime.ofLocal(localDateTime, zone, preferred);
         }
         ZoneOffsetTransition transition = rules.getTransition(localDateTime);
         if (transition != null && transition.isGap()) {
             LocalDateTime shifted = localDateTime.plus(transition.getDuration());
-            return ZonedDateTime.ofLocal(shifted, zone, transition.getDateTimeAfter().getOffset());
+            return ZonedDateTime.ofLocal(shifted, zone, transition.getOffsetAfter());
         }
-        return ZonedDateTime.of(localDateTime, zone);
+        throw new ApiException(HttpStatus.BAD_REQUEST,
+                "Unable to resolve local time " + localDateTime + " in timezone " + zone.getId());
     }
 
     private boolean hasAnyRole(Authentication auth, String... roles) {

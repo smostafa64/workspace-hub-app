@@ -47,6 +47,21 @@ mvn spring-boot:run
 
 `DB_*` values configure the Spring DataSource. The default file-based H2 path is `./workspacehub` (data persists across restarts).
 
+### Database migration strategy
+
+Flyway owns the schema and Hibernate schema updates remain disabled. The published
+`V1__add_series_id_to_reservations.sql` migration is intentionally unchanged so databases that
+already recorded it do not encounter a checksum mismatch. Migration V2 repairs a fresh database
+after V1 by creating the complete application schema and constraints, and it upgrades a database
+that already ran V1 by adding every missing reservation column without dropping data.
+
+Pre-feature databases were created by Hibernate and have no Flyway history. With
+`baseline-on-migrate` enabled at version 1, Flyway records that existing schema as the legacy
+baseline and then applies V2. For a valid legacy schema, V2 only adds the nullable `series_id`
+column and its index; existing reservation rows, primary keys, foreign keys, and time indexes are
+preserved. If the broken V1 table somehow contains rows despite lacking the columns needed to
+represent a reservation, V2 stops with an explicit error instead of discarding or inventing data.
+
 ## API examples
 
 ```bash
@@ -94,8 +109,13 @@ Recurring series expand in the supplied `timezone` using local wall-clock times.
 The timezone policy is deterministic:
 
 - If a local time is ambiguous during a fall-back transition, the earlier valid instant is selected.
-- If a local time is nonexistent during a spring-forward transition, the time is shifted forward by the DST gap duration to the first valid instant after the gap.
-- `startsAt` and `endsAt` must carry offset values that match the supplied timezone at their instant.
+- If a local time is nonexistent during a spring-forward transition, the time is shifted forward by the DST gap duration. Its intended local clock time is retained for later weekly occurrences.
+- `startsAt` and `endsAt` must resolve to the same instant as this policy in the supplied timezone. A later overlap offset is rejected rather than silently changed; a gap input uses the pre-transition offset and is normalized forward.
+
+The browser applies the same rules without assuming its own timezone: it resolves each
+`datetime-local` value in the selected IANA timezone and submits an ISO 8601 value with the
+corresponding offset. Conflict responses are rendered as occurrence-specific local date/time
+ranges, and the UI reports that no reservations were created only for an atomic series conflict.
 
 A conflict for any occurrence returns HTTP `409` with a `RESERVATION_CONFLICT` payload like:
 
