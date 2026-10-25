@@ -1,0 +1,15 @@
+server:
+  port: ${PORT:8080}
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:h2:file:./workspacehub;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE}
+    username: ${DB_USER:sa}
+    password: ${DB_PASSWORD:}
+    driver-class-name: ${DB_DRIVER:org.h2.Driver}
+  jpa:
+    hibernate:
+      ddl-auto: update # Demo only; use Flyway/Liquibase for production
+    open-in-view: false
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false

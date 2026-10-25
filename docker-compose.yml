@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: workspacehub
+      POSTGRES_USER: workspace
+      POSTGRES_PASSWORD: local_only_change_me
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workspace -d workspacehub"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - workspacehub_pg:/var/lib/postgresql/data
+volumes:
+  workspacehub_pg:

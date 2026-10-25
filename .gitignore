@@ -1,0 +1,9 @@
+target/
+.idea/
+*.iml
+.vscode/
+*.log
+.env
+.DS_Store
+workspacehub.mv.db
+workspacehub.trace.db

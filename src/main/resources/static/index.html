@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workspace Hub | Reservations</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header><div class="brand">Workspace<span>Hub</span></div><div class="subtitle">Corporate resources and meeting spaces</div></header>
+  <main>
+    <section class="hero"><div><p class="eyebrow">RESOURCE BOOKING</p><h1>Find space for your next great idea.</h1><p>Reserve meeting rooms, desks and equipment. Availability is checked when you book.</p></div><div class="hero-mark">WH.</div></section>
+    <section class="panel"><div class="heading"><h2>Resources</h2><span id="resource-count" data-testid="resource-count"></span></div><div id="resource-list" class="resources" data-testid="resource-list">Loading...</div></section>
+    <div class="columns">
+      <section class="panel"><h2>New reservation</h2><form id="reservation-form">
+        <label>Resource<select id="resource" data-testid="resource-select" required></select></label>
+        <label>Meeting title<input id="title" data-testid="booking-title" maxlength="120" placeholder="Quarterly planning" required></label>
+        <div class="date-grid"><label>Start<input id="start" data-testid="booking-start" type="datetime-local" required></label><label>End<input id="end" data-testid="booking-end" type="datetime-local" required></label></div>
+        <button data-testid="book-button" type="submit">Reserve resource</button>
+        <p id="message" data-testid="booking-message" role="status"></p>
+      </form></section>
+      <section class="panel"><div class="heading"><h2>My reservations</h2><button id="refresh" class="ghost" type="button">Refresh</button></div><div id="reservations" data-testid="booking-list">Loading...</div></section>
+    </div>
+    <footer>Demo users: alice / alice123, bob / bob123, manager / manager123, admin / admin123. HTTP Basic login.</footer>
+  </main><script src="/app.js"></script>
+</body>
+</html>
