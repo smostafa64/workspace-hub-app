@@ -8,17 +8,26 @@
 <body>
   <header><div class="brand">Workspace<span>Hub</span></div><div class="subtitle">Corporate resources and meeting spaces</div></header>
   <main>
-    <section class="hero"><div><p class="eyebrow">RESOURCE BOOKING</p><h1>Find space for your next great idea.</h1><p>Reserve meeting rooms, desks and equipment. Availability is checked when you book.</p></div><div class="hero-mark">WH.</div></section>
-    <section class="panel"><div class="heading"><h2>Resources</h2><span id="resource-count" data-testid="resource-count"></span></div><div id="resource-list" class="resources" data-testid="resource-list">Loading...</div></section>
+    <section class="hero"><div><p class="eyebrow">RESOURCE BOOKING</p><h1>Find space for your next great idea.</h1><p>Reserve meeting rooms, desks and equipment. Availability is checked when you book.</p></div></section>
+    <section class="panel"><div class="heading"><h2>Resources</h2><span id="resource-count" data-testid="resource-count"></span></div><div id="resource-list" class="resources" data-testid="resource-list"></div></section>
     <div class="columns">
       <section class="panel"><h2>New reservation</h2><form id="reservation-form">
+        <label>Booking type<select id="booking-type" data-testid="booking-type"><option value="one-time">One-time</option><option value="series">Weekly series</option></select></label>
         <label>Resource<select id="resource" data-testid="resource-select" required></select></label>
         <label>Meeting title<input id="title" data-testid="booking-title" maxlength="120" placeholder="Quarterly planning" required></label>
         <div class="date-grid"><label>Start<input id="start" data-testid="booking-start" type="datetime-local" required></label><label>End<input id="end" data-testid="booking-end" type="datetime-local" required></label></div>
+        <div id="series-options" hidden>
+          <label>Timezone<select id="series-timezone" data-testid="series-timezone">
+            <option value="Europe/Berlin">Europe/Berlin</option>
+            <option value="UTC">UTC</option>
+            <option value="America/New_York">America/New_York</option>
+          </select></label>
+          <label>Occurrences<input id="series-occurrences" data-testid="series-occurrences" type="number" min="2" max="12" value="4"></label>
+        </div>
         <button data-testid="book-button" type="submit">Reserve resource</button>
         <p id="message" data-testid="booking-message" role="status"></p>
       </form></section>
-      <section class="panel"><div class="heading"><h2>My reservations</h2><button id="refresh" class="ghost" type="button">Refresh</button></div><div id="reservations" data-testid="booking-list">Loading...</div></section>
+      <section class="panel"><div class="heading"><h2>My reservations</h2><button id="refresh" class="ghost" type="button">Refresh</button></div><div id="reservations" data-testid="booking-list">Loading reserved rooms...</div></section>
     </div>
     <footer>Demo users: alice / alice123, bob / bob123, manager / manager123, admin / admin123. HTTP Basic login.</footer>
   </main><script src="/app.js"></script>
