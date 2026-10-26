@@ -1,290 +1,92 @@
-# FEATURE-001: Independent QA Test Implementation and Execution
+# FEATURE-001 — Independent QA execution plan
 
-**Role:** Senior Software Development Engineer in Test (SDET)  
-**Priority:** Critical  
-**Task:** Design, implement, and execute tests for recurring meeting-room reservations.
+**Document role:** Testing and execution instructions, **not** an authoritative source of new business rules.  
+**Business authority:** `FEATURE-001-recurring-bookings.md` only.  
+**Task configuration:** `FEATURE-001.task.yml`.  
+**Project configuration:** `project.yml`.
 
-## 1. Objective
+## Objective and restrictions
 
-FEATURE-001 has been implemented by a separate Developer Agent.
+Implement and run independently designed tests for recurring meeting-room bookings. Do not accept Developer Agent claims as proof. Do not change application production code, migrations, deployment configuration or business requirements to make tests pass. Do not weaken or remove assertions. Keep the unrelated `BUG-001` distinct.
 
-Your job is to independently verify the feature against its original business requirements.
+The Business Architect derives all scenarios and expected outcomes from the business-authority document. The Writer may inspect approved interfaces, test repositories, and automation knowledge to implement those scenarios, **not application production `src/main`**. A separate, post-design-freeze source-impact process may inspect code-change risk categories without defining expected behavior.
 
-Do not assume the implementation is correct based on the Developer Agent's report or its existing unit tests.
+Use `workspace-hub-app/src/test` for developer-owned tests and `workspace-hub-qa` for Cucumber, REST Assured, and Playwright Java tests. Both are separate testing subjects: preserve their repository identities and executable test reports.
 
-You must design meaningful tests, execute them, investigate failures, and document defects.
+## Test coverage instructions
 
-## 2. Repository Responsibilities
+The sections below identify coverage work. Where they go beyond the business document, treat them as *risk-derived or proposed checks*, not automatically approved product requirements. Record ambiguous expected results as `ASSUMPTION_REQUIRED` or `REQUIREMENT_REVIEW_REQUIRED`. Never turn a test-plan suggestion into a business oracle.
 
-You have access to:
+### TC-001 — Successful weekly series
 
-**workspace-hub-app**
-- Read production code and API contracts.
-- Create and maintain unit tests.
-- Create integration tests where appropriate.
-- Do not modify production implementation.
+Verify `POST /api/reservation-series` with valid fields, `WEEKLY`, and counts from 2 through 12 where applicable. Check HTTP 201, exactly the requested number of bookings, consistent non-null `seriesId`, resource/title/status, and correct occurrence data. Confirm results by a supported read interface or direct persistence evidence where required.
 
-**workspace-hub-qa**
-- Create Cucumber/Gherkin BDD scenarios.
-- Implement Rest Assured API tests.
-- Implement Playwright Java E2E tests.
-- Maintain test fixtures and execution documentation.
+### TC-002 — Validation
 
-You must NOT:
-- Change production Java source code.
-- Fix business logic defects yourself.
-- Modify database migrations to make tests pass.
-- Weaken assertions to accommodate wrong behavior.
-- Disable or delete failing tests without documenting why.
-- Treat known BUG-001 as a FEATURE-001 regression.
-- Rely solely on tests written by the Developer Agent.
+Exercise invalid occurrence counts (including fractional `2.5`), missing/invalid zone, unsupported frequency, missing resource, inactive resource, past start, invalid timestamp/offset, and duration below 15 minutes or above 8 hours. The business document **explicitly requires HTTP 400 for invalid `occurrences`**. For other invalid inputs it requires validation, but does not universally specify an exact HTTP status; use approved error contracts or record the oracle gap. Verify no unintended records were created when applicable.
 
-Report confirmed implementation bugs for the Developer Agent to fix.
+### TC-003 — DST and time zones
 
-## 3. Functional Test Requirements
+Test weekly local-clock recurrence across spring and autumn DST transitions and supported IANA zones. Check the same intended local times and the correct instant/offset relationship. The original business document **does not define** how ambiguous autumn times, nonexistent spring times, or conflicting explicit offsets should be resolved. Do not assume an earlier-overlap or gap-shift policy: request an approved business decision before asserting one.
 
-Test the following business behaviors:
+Use dates determined from the test runtime so they remain in the future. Preserve the weekday, local clock time, zone, count, and intended DST boundary; derive expected instants from the approved timezone policy rather than hardcoded stale dates.
 
-### TC-001: Successful Recurring Reservation
+### TC-004 — Atomicity and persistence
 
-Verify that:
-- The API accepts a valid weekly reservation request.
-- 2–12 occurrences are supported.
-- HTTP 201 is returned.
-- All occurrences have the same seriesId.
-- Each occurrence has the correct room, title, and status.
-- The response includes the expected occurrence information.
+Seed a conflict at the second, last, or multiple occurrences. Assert HTTP 409, correctly identified conflict dates/indexes, and **zero new bookings** from the rejected series. A response status alone does not establish rollback: inspect persisted records through an approved read interface or isolated DB connection. If unavailable, report this assertion `NEEDS_BINDING`.
 
-### TC-002: Input Validation
+### TC-005 — Concurrency
 
-Test:
-- Occurrences less than 2.
-- Occurrences greater than 12.
-- Missing or invalid timezone.
-- Unsupported frequency.
-- Missing resourceId.
-- Inactive or nonexistent resources.
-- Start time in the past.
-- End time before start time.
-- Duration shorter than 15 minutes.
-- Duration longer than 8 hours.
-- Missing timestamps or invalid offsets.
+Run concurrent series-versus-series and series-versus-one-off requests with synchronized starts; inspect the real stored result. Verify that competing overlapping requests cannot both succeed and that no duplicate booking is committed. One-off-versus-one-off contention is additional regression risk coverage if the existing business contract establishes the rule. Mockito-only execution cannot prove database locking.
 
-Verify appropriate HTTP error responses.
+### TC-006 — Approval
 
-### TC-003: DST and Timezone
+For a verified approval-required test room, assert that series occurrences start as `PENDING`. Approval permissions, individual approval operations, and approval conflict rules require existing approved contracts; test them as related regressions **only where the business contract or prior requirements establish expectations**.
 
-Test weekly reservations crossing:
+### TC-007 — Individual cancellation
 
-- Spring daylight-saving transition.
-- Autumn daylight-saving transition.
-- Ambiguous local times.
-- Nonexistent local times.
-- Different IANA timezones.
+Cancel one occurrence through the documented existing endpoint. Verify the other occurrences remain intact with the original series membership. Authorization checks require an approved existing permissions contract.
 
-Verify:
-- Local start clock time remains constant.
-- Local end clock time remains constant.
-- UTC offsets change correctly.
-- Actual elapsed duration is validated per occurrence.
-- Earlier-overlap policy is applied.
-- Gap handling follows documented behavior.
-- Invalid explicit offsets are rejected.
+### TC-008 — Database/schema compatibility
 
-Use deterministic future test dates and avoid reliance on the current system clock where possible.
+Use disposable PostgreSQL/Testcontainers where available. Verify nullable `series_id`, preservation of existing reservations, schema constraints, and the migration supported by the actual project. Fresh creation and applicable legacy upgrades are valuable migration regression checks. Do not assume a particular Flyway V1-to-V2 repair path exists until the approved migration plan establishes it. Never run destructive migration tests against shared data.
 
-### TC-004: Atomicity
+### TC-009 — Browser E2E
 
-Create a scenario where the second or third occurrence conflicts with an existing reservation.
+Use Playwright Java to complete an employee's real weekly-series booking and verify three occurrences and visible series membership. Reuse **verified** UI selectors or accessible roles/names. Do not invent `data-testid` values. Record absent controls, timezone inputs, error rendering, and membership selectors as separate missing bindings. Also verify the existing one-off browser workflow.
 
-Verify:
-- API returns 409.
-- Response identifies the conflicting occurrence.
-- No reservations from the failed series exist in the database.
+### TC-010 — Existing-flow regression
 
-Also test multiple conflicting occurrences.
+Run existing application and QA tests that exercise one-time bookings, availability, approval, cancellation, and authorization. Keep the unrelated known `BUG-001` identifiable; it is not a reason to fabricate a PASS or suppress new regressions.
 
-### TC-005: Concurrency
+## Binding and fixture prerequisites
 
-Use real database integration tests to simulate:
+Before Writer generation, use the Project Understanding catalog and check:
 
-1. Two simultaneous recurring reservation requests for the same room and times.
-2. One recurring reservation competing with a one-time reservation.
-3. Two simultaneous one-time reservation requests.
+1. Approved recurring-series API contract or test-visible interface signatures for unit and REST tests.
+2. QA fixture creation/cleanup for active non-approval, approval-required, and inactive resources; do not invent permanent resource IDs.
+3. Authentication and role fixtures for employee and manager without committing secrets.
+4. Durable observation boundary (approved read API / test database adapter) for rollback and concurrency assertions.
+5. Existing or newly documented selectors for weekly-series controls, results, and membership display.
+6. Maven/JUnit, Cucumber, Rest Assured, Playwright, and isolated Postgres readiness.
+7. Test target bound to the full frozen application SHA or an independently observed immutable deployed build identity.
 
-Verify:
-- Both overlapping attempts cannot succeed.
-- No duplicate active reservations are stored.
-- Database state remains consistent.
+If any prerequisite is unavailable, mark only the affected assertions `NEEDS_BINDING` / `BLOCKED`, continue other executable work, and do not invent an endpoint, production class, selector, fixture, or passing result.
 
-Use synchronized request starts, proper concurrency assertions, and repeated runs to improve the chance of exposing race conditions.
+## Execution and evidence
 
-Do not use Mockito-only tests as proof of database locking correctness.
+- Compile both repositories with their actual Maven module/runners and run focused suites plus the required regressions. `mvn clean verify` is only an example until the app's actual modules and test profiles are confirmed.
+- Keep authoritative native JUnit/Cucumber reports and browser evidence, tied to exact native testcase names and plan/binding identities; do not infer runtime evidence from compilation.
+- Every independently verifiable frozen assertion retains its stable assertion ID. Missing database verification cannot be covered by an HTTP response.
+- Run deterministic manifest, test-result attribution, QC, and release gates. A supplementary/manual run does not become formal evidence automatically.
+- Distinguish confirmed application defects, test defects, environment blockers, ambiguous requirements, and unverified build identity.
+- Track tokens and LLM calls by phase and step from task initialization. Token budget targets are advisory and must never terminate the task.
 
-### TC-006: Approval Workflow
+## Known observations from the prior attempt (not new business requirements)
 
-Verify:
-- Approval-required rooms create PENDING occurrences.
-- Authorized users can approve individual occurrences.
-- Unauthorized users cannot approve them.
-- Approval does not create overlapping confirmed bookings.
+- `occurrences: 2.5` reportedly produced HTTP 201 and two bookings, while the business acceptance criterion requires HTTP 400 for invalid occurrence values. Record as an application defect *signal* until reproduced against an identified candidate build.
+- Unit-series interface, inactive-resource fixture, weekly-series UI selectors, certain status observations, and a pre-existing QA glue compilation issue blocked obligations. Recheck after configuring the real environment; do not copy prior `BLOCKED` or `PASS` as current runtime evidence.
 
-### TC-007: Individual Cancellation
+## Deliverables
 
-Verify:
-- One occurrence can be cancelled.
-- Other occurrences remain unchanged.
-- All occurrences retain their seriesId.
-- Unauthorized cancellation is rejected.
-
-### TC-008: Database Migration
-
-Using PostgreSQL, verify:
-
-- Fresh database initialization.
-- Upgrade of a representative legacy schema without Flyway history.
-- Upgrade from a database where V1 is already applied.
-- Existing reservation records remain intact.
-- series_id is nullable.
-- Schema constraints and indexes are correct.
-
-Pay special attention to the V1-to-V2 Java-based Flyway repair.
-
-Use isolated disposable databases. Never run destructive migration tests against a company or shared database.
-
-### TC-009: UI E2E
-
-Using Playwright for Java, automate:
-
-1. Login as an employee.
-2. Open the reservation screen.
-3. Select a meeting room.
-4. Choose Weekly Series.
-5. Enter valid start/end dates and times.
-6. Select Europe/Berlin.
-7. Choose three occurrences.
-8. Submit the reservation.
-9. Verify success.
-10. Verify the three reservations and their series membership.
-
-Also cover:
-- Timezone behavior across DST.
-- Invalid inputs.
-- Detailed multi-occurrence conflict messages.
-- Existing one-time reservation flow.
-
-### TC-010: Backward Compatibility
-
-Execute existing application and QA regression tests.
-
-Verify:
-- One-time reservations still work.
-- Availability checks still work.
-- Existing approval and cancellation behavior is preserved.
-- Authorization rules remain enforced.
-
-BUG-001 is a known separate defect. Keep it explicitly identified and isolated rather than silently changing its expected result.
-
-## 4. Test Implementation Rules
-
-Use:
-- Java 21.
-- Maven.
-- JUnit 5.
-- Mockito for isolated unit tests.
-- Testcontainers with PostgreSQL for database integration testing, where supported.
-- Cucumber/Gherkin for BDD.
-- Rest Assured for API testing.
-- Playwright Java for UI E2E.
-
-Requirements:
-- Tests must be deterministic.
-- Test data must be isolated.
-- No dependency on previous test executions.
-- Use clear, meaningful assertions.
-- Avoid unnecessary Thread.sleep.
-- Use explicit browser waits.
-- Keep BDD scenarios readable by business stakeholders.
-- Preserve the separation between application unit tests and QA automation.
-
-## 5. Execution
-
-Run application tests:
-
-```bash
-cd workspace-hub-app
-mvn clean verify
-```
-
-Run the separate QA test suites using their configured Maven runners.
-
-Run PostgreSQL integration tests using an isolated database environment.
-
-Run Playwright browser tests against a running application.
-
-If an environment dependency is unavailable, report the limitation explicitly rather than claiming success.
-
-## 6. Defect Reporting
-
-When a test fails:
-
-1. Confirm whether the test expectation matches the business requirement.
-2. Investigate the failure.
-3. Distinguish a test defect, environment problem, and application defect.
-4. Provide reproduction steps.
-5. Include expected and actual results.
-6. Attach relevant assertion failures, logs, or screenshots.
-7. Reference the affected requirement.
-
-Do not modify production code to resolve test failures.
-
-## 7. Deliverables
-
-**A. Test Coverage Matrix**
-
-Map all FEATURE-001 requirements to implemented tests.
-
-**B. New Unit Tests**
-
-List tests added to workspace-hub-app.
-
-**C. BDD Scenarios**
-
-List feature files, scenarios, and results in workspace-hub-qa.
-
-**D. E2E Tests**
-
-List browser journeys and execution results.
-
-**E. Test Execution Report**
-
-Include commands, environment, passed/failed/skipped counts, and evidence.
-
-**F. Defect Report**
-
-For every confirmed defect, provide severity, requirement, reproduction steps, expected/actual behavior, and evidence.
-
-**G. Remaining Risks**
-
-List untested functionality and environment limitations.
-
-**H. Final QA Verdict**
-
-Choose one:
-- PASS: All required acceptance criteria verified.
-- FAIL: Confirmed application defects violate requirements.
-- INCONCLUSIVE: Required verification could not be completed.
-
-## 8. Final Instructions
-
-Implement actual automated tests in both repositories.
-
-Do not stop at proposing scenarios.
-
-Execute the tests wherever possible.
-
-Commit test changes separately in the appropriate repositories.
-
-Do not modify production implementation.
-
-Your responsibility is to independently determine whether FEATURE-001 works correctly.
+Provide frozen requirement/scenario/assertion traceability, implemented tests and locations, manifest obligations (including missing bindings), actual execution commands/native evidence, confirmed defects with reproductions, coverage gaps, candidate identity, regression results, phase/step token usage, and final QA `PASS` / `FAIL` / `BLOCKED` status according to the agent's gates. Do not push or deploy without explicit authorization.
