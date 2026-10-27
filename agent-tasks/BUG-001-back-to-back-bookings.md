@@ -14,7 +14,6 @@ Bookings use **half-open intervals** `[startsAt, endsAt)`. Conflict exists if an
 ## Agent instructions
 - Find the underlying source of false conflicts; fix the query and any related logic.
 - Introduce a repository/integration regression test using H2/PostgreSQL and a service unit test where useful.
-- In `workspace-hub-qa`, remove `@known-bug` from the adjacent-slot BDD scenario and add the reverse boundary case.
 - Add E2E coverage of an adjacent booking if reliable with UI.
 - Ensure actual overlaps still reject with `409`, cancellation frees the time, and simultaneous booking safety still holds.
 

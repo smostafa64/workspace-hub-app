@@ -1,6 +1,6 @@
 # Workspace Hub — application repository
 
-A **Java 21 + Maven + Spring Boot** starter application for corporate meeting-room, desk and equipment reservations. This repository owns application logic and **unit tests**. The companion `workspace-hub-qa` repository owns **BDD + E2E tests**.
+A **Java 21 + Maven + Spring Boot** starter application for corporate meeting-room, desk and equipment reservations. This repository owns application logic and **unit tests**. The companion `workspace-hub-qa` repository contains browser and API tests.
 
 ## What works today
 
@@ -10,6 +10,7 @@ A **Java 21 + Maven + Spring Boot** starter application for corporate meeting-ro
 - Server-side role enforcement; audit events; basic single-page browser UI.
 - Pessimistic resource row lock inside booking transaction to serialize simultaneous writes.
 - Local file-based H2 out of the box; PostgreSQL through Docker Compose.
+- Weekly recurring reservations with timezone-aware expansion and atomic conflict handling.
 
 ## Requirements
 
@@ -46,10 +47,37 @@ mvn spring-boot:run
 
 `DB_*` values configure the Spring DataSource. The default file-based H2 path is `./workspacehub` (data persists across restarts).
 
+### Database migration strategy
+
+Flyway owns the schema and Hibernate schema updates remain disabled. The published
+`V1__add_series_id_to_reservations.sql` migration is intentionally unchanged so databases that
+already recorded it do not encounter a checksum mismatch. Migration V2 repairs a fresh database
+after V1 by creating the complete application schema and constraints, and it upgrades a database
+that already ran V1 by adding every missing reservation column without dropping data.
+
+Pre-feature databases were created by Hibernate and have no Flyway history. With
+`baseline-on-migrate` enabled at version 1, Flyway records that existing schema as the legacy
+baseline and then applies V2. For a valid legacy schema, V2 only adds the nullable `series_id`
+column and its index; existing reservation rows, primary keys, foreign keys, and time indexes are
+preserved. If the broken V1 table somehow contains rows despite lacking the columns needed to
+represent a reservation, V2 stops with an explicit error instead of discarding or inventing data.
+
 ## API examples
 
 ```bash
 curl -u alice:alice123 http://localhost:8080/api/resources
+curl -u alice:alice123 http://localhost:8080/api/reservations
+curl -u alice:alice123 -X POST http://localhost:8080/api/reservation-series \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "resourceId": 1,
+    "title": "Weekly Engineering Meeting",
+    "startsAt": "2026-11-02T10:00:00+01:00",
+    "endsAt": "2026-11-02T11:00:00+01:00",
+    "timezone": "Europe/Berlin",
+    "frequency": "WEEKLY",
+    "occurrences": 6
+  }'
 curl -u alice:alice123 http://localhost:8080/api/reservations
 curl -u alice:alice123 -X POST http://localhost:8080/api/reservations \
   -H 'Content-Type: application/json' \
@@ -68,12 +96,44 @@ curl -u manager:manager123 -X POST http://localhost:8080/api/reservations/2/deci
 | `/api/resources/{id}` | PUT | ADMIN | edit resource; code immutable |
 | `/api/resources/{id}/availability?start=...&end=...` | GET | any signed-in | availability check |
 | `/api/reservations` | POST | any signed-in | book resource |
+| `/api/reservation-series` | POST | any signed-in | book a weekly recurring series |
 | `/api/reservations?all=true` | GET | signed-in; all only for MANAGER/ADMIN | own or all bookings |
 | `/api/reservations/{id}/cancel` | POST | owner or MANAGER/ADMIN | cancel |
 | `/api/reservations/{id}/decision` | POST | MANAGER/ADMIN | approve/reject pending |
 | `/api/audit` | GET | MANAGER/ADMIN | latest 100 audit entries |
 
-Dates use ISO 8601 timestamps with UTC offsets (`Z` is easiest). Response statuses include `201`, `400`, `403`, `404`, and `409`.
+## Recurring reservation series behavior
+
+Recurring series expand in the supplied `timezone` using local wall-clock times. Each weekly occurrence keeps the same local start and end time in that timezone, even when daylight-saving transitions shift the UTC offset. The implementation uses Java `java.time` APIs instead of adding 168 hours to a UTC instant.
+
+The timezone policy is deterministic:
+
+- If a local time is ambiguous during a fall-back transition, the earlier valid instant is selected.
+- If a local time is nonexistent during a spring-forward transition, the time is shifted forward by the DST gap duration. Its intended local clock time is retained for later weekly occurrences.
+- `startsAt` and `endsAt` must resolve to the same instant as this policy in the supplied timezone. A later overlap offset is rejected rather than silently changed; a gap input uses the pre-transition offset and is normalized forward.
+
+The browser applies the same rules without assuming its own timezone: it resolves each
+`datetime-local` value in the selected IANA timezone and submits an ISO 8601 value with the
+corresponding offset. Conflict responses are rendered as occurrence-specific local date/time
+ranges, and the UI reports that no reservations were created only for an atomic series conflict.
+
+A conflict for any occurrence returns HTTP `409` with a `RESERVATION_CONFLICT` payload like:
+
+```json
+{
+  "code": "RESERVATION_CONFLICT",
+  "message": "One or more occurrences conflict with existing reservations",
+  "conflicts": [
+    {
+      "occurrenceIndex": 2,
+      "startsAt": "2026-11-09T10:00:00+01:00",
+      "endsAt": "2026-11-09T11:00:00+01:00"
+    }
+  ]
+}
+```
+
+Dates use ISO 8601 timestamps with UTC offsets (`Z` is easiest). Response statuses include `201`, `400`, `403`, `404`, `409`.
 
 ## QA split
 
@@ -87,4 +147,4 @@ See [`agent-tasks/FEATURE-001-recurring-bookings.md`](agent-tasks/FEATURE-001-re
 
 ## Security / deployment caveats
 
-This is a **demo project**, not production-ready. It has **hardcoded HTTP Basic users**, `{noop}` passwords, **CSRF disabled**, no company SSO, no rate limiting, and `hibernate.ddl-auto=update`. Use HTTPS, company identity provider/OIDC, real authorization policies, database migrations, and secret management before deploying internally. The bundled deliberate availability defect is documented as `BUG-001` and **must be fixed before actual employee use**. No emails/integrations are sent yet.
+This is a **demo project**, not production-ready. It has **hardcoded HTTP Basic users**, `{noop}` passwords, **CSRF disabled**, no company SSO, no rate limiting, and `hibernate.ddl-auto=none` with Flyway migrations for schema changes. Keep the app behind trusted internal access for demo use.

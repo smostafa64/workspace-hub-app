@@ -6,10 +6,17 @@ spring:
     username: ${DB_USER:sa}
     password: ${DB_PASSWORD:}
     driver-class-name: ${DB_DRIVER:org.h2.Driver}
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+    baseline-description: Pre-Flyway Workspace Hub schema
   jpa:
     hibernate:
-      ddl-auto: update # Demo only; use Flyway/Liquibase for production
+      ddl-auto: none
     open-in-view: false
   jackson:
+    deserialization:
+      adjust-dates-to-context-time-zone: false
     serialization:
       write-dates-as-timestamps: false
